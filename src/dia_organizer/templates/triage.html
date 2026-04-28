@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Triage ({{ items|length }})</h1>
+{% if not items %}
+  <p>Nothing to triage.</p>
+{% endif %}
+<ul class="triage-list">
+{% for it in items %}
+  <li class="triage-row" data-id="{{ it['archive_id'] }}">
+    <div class="title">{{ it['title'] }}</div>
+    <div class="meta">
+      <span class="profile">{{ it['profile'] }}</span>
+      <span class="domain">{{ it['domain'] }}</span>
+    </div>
+    {% if it['meta_desc'] %}<div class="desc">{{ it['meta_desc'] }}</div>{% endif %}
+    <form method="post" action="/triage/{{ it['archive_id'] }}/keep" class="inline">
+      <button type="submit">Keep</button>
+    </form>
+    <form method="post" action="/triage/{{ it['archive_id'] }}/close" class="inline">
+      <button type="submit">Close</button>
+    </form>
+    <form method="post" action="/triage/{{ it['archive_id'] }}/snooze" class="inline">
+      <select name="days">
+        <option value="1">1d</option>
+        <option value="3">3d</option>
+        <option value="7" selected>7d</option>
+        <option value="14">14d</option>
+      </select>
+      <button type="submit">Snooze</button>
+    </form>
+  </li>
+{% endfor %}
+</ul>
+{% endblock %}

@@ -1,0 +1,14 @@
+<!doctype html>
+<html><head>
+  <meta charset="utf-8">
+  <title>Dia Organizer</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head><body>
+  <nav>
+    <a href="{{ url_for('triage_page') }}">Triage</a> |
+    <a href="{{ url_for('archive_page') }}">Archive</a> |
+    <a href="{{ url_for('history_page') }}">History</a>
+  </nav>
+  <main>{% block content %}{% endblock %}</main>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body></html>

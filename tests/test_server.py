@@ -1,0 +1,66 @@
+from dia_organizer import db, archive, triage, server
+
+
+def _seed(conn):
+    rec = archive.upsert_live(conn, {
+        "dia_tab_id": "t1", "profile": "Keagan", "window_id": "w1",
+        "title": "Stale article", "url": "https://example.com/article",
+        "pinned": False, "focused": False, "now": 1,
+        "meta_desc": "an article", "h1": "Heading",
+    })
+    triage.enqueue(conn, rec.archive_id, now=1)
+    return rec.archive_id
+
+
+def test_index_redirects_to_triage(tmp_data_dir):
+    db.open_db().close()
+    app = server.create_app()
+    client = app.test_client()
+    res = client.get("/")
+    assert res.status_code in (302, 308)
+    assert "/triage" in res.headers["Location"]
+
+
+def test_triage_page_lists_pending(tmp_data_dir):
+    conn = db.open_db()
+    _seed(conn)
+    conn.close()
+    app = server.create_app()
+    client = app.test_client()
+    res = client.get("/triage")
+    assert res.status_code == 200
+    assert b"Stale article" in res.data
+    assert b"Keep" in res.data and b"Close" in res.data
+
+
+def test_triage_keep_action(tmp_data_dir):
+    conn = db.open_db()
+    aid = _seed(conn)
+    conn.close()
+    app = server.create_app()
+    client = app.test_client()
+    res = client.post(f"/triage/{aid}/keep")
+    assert res.status_code in (200, 302)
+    conn = db.open_db()
+    row = conn.execute("SELECT resolution FROM triage_queue WHERE archive_id=?", (aid,)).fetchone()
+    assert row["resolution"] == "keep"
+
+
+def test_triage_close_action_archives_and_calls_applescript(tmp_data_dir, monkeypatch):
+    conn = db.open_db()
+    aid = _seed(conn)
+    conn.close()
+    calls = []
+    monkeypatch.setattr("dia_organizer.applescript.close_tab",
+                         lambda w, t: calls.append((w, t)))
+    app = server.create_app()
+    client = app.test_client()
+    res = client.post(f"/triage/{aid}/close")
+    assert res.status_code in (200, 302)
+    assert calls == [("w1", "t1")]
+    conn = db.open_db()
+    row = conn.execute(
+        "SELECT is_live, close_reason FROM tabs WHERE archive_id=?", (aid,)
+    ).fetchone()
+    assert row["is_live"] == 0
+    assert row["close_reason"] == "triage:close"

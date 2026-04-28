@@ -1,0 +1,7 @@
+body { font-family: -apple-system, sans-serif; max-width: 960px; margin: 1rem auto; }
+nav { margin-bottom: 1rem; }
+.triage-row { border: 1px solid #ddd; padding: .75rem; margin: .5rem 0; border-radius: 6px; }
+.triage-row .title { font-weight: 600; }
+.triage-row .meta { color: #666; font-size: .85em; }
+.inline { display: inline; }
+button { cursor: pointer; }
