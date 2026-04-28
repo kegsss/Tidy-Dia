@@ -77,12 +77,10 @@ def create_app() -> Flask:
         action = data.get("action")
         if not action:
             return jsonify({"error": "missing action"}), 400
-        cid = enqueue_extension_command(
-            action,
-            urls=data.get("urls", []),
-            title=data.get("title", "Triage"),
-            color=data.get("color", "grey"),
-        )
+        # Forward all fields except 'action' so per-action params (profile_hint,
+        # urls, title, color, etc.) reach the extension intact.
+        payload = {k: v for k, v in data.items() if k != "action"}
+        cid = enqueue_extension_command(action, **payload)
         return jsonify({"id": cid})
 
     @app.route("/triage")
