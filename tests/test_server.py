@@ -1,4 +1,4 @@
-from dia_organizer import db, archive, triage, server
+from dia_organizer import db, archive, snapshots, triage, server
 
 
 def _seed(conn):
@@ -100,3 +100,39 @@ def test_archive_reopen_calls_applescript(tmp_data_dir, monkeypatch):
     res = client.post(f"/archive/{rec.archive_id}/reopen")
     assert res.status_code in (200, 302)
     assert seen == [("w1", "https://x/y")]
+
+
+def test_history_lists_snapshots(tmp_data_dir):
+    conn = db.open_db()
+    snapshots.take(conn, [{"window_id": "w1", "name": "n",
+                            "tabs": [{"dia_tab_id": "t1", "title": "T",
+                                       "url": "https://a", "pinned": False,
+                                       "focused": False}]}],
+                    {"w1": "Keagan"}, label="lab", trigger="manual",
+                    retention="manual", now=10)
+    conn.close()
+    app = server.create_app()
+    client = app.test_client()
+    res = client.get("/history")
+    assert res.status_code == 200
+    assert b"lab" in res.data
+
+
+def test_history_rollback_dry_run(tmp_data_dir, monkeypatch):
+    conn = db.open_db()
+    sid = snapshots.take(conn, [{"window_id": "w1", "name": "n",
+                                   "tabs": [{"dia_tab_id": "t1", "title": "T",
+                                              "url": "https://a", "pinned": False,
+                                              "focused": False}]}],
+                          {"w1": "Keagan"}, label="lab", trigger="manual",
+                          retention="manual", now=10)
+    conn.close()
+    monkeypatch.setattr("dia_organizer.applescript.list_tabs",
+                         lambda: [{"window_id": "w1", "name": "n", "tabs": []}])
+    monkeypatch.setattr("dia_organizer.profiles.resolve_live",
+                         lambda: {"w1": "Keagan"})
+    app = server.create_app()
+    client = app.test_client()
+    res = client.get(f"/history/{sid}")
+    assert res.status_code == 200
+    assert b"would reopen" in res.data.lower() or b"to_open" in res.data.lower()

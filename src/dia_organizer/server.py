@@ -69,6 +69,44 @@ def create_app() -> Flask:
 
     @app.route("/history")
     def history_page():
-        return "history (todo)"
+        conn = db.open_db()
+        rows = [dict(r) for r in snapshots.list_all(conn)]
+        return render_template("history.html", snapshots=rows, detail=None)
+
+    @app.route("/history/<int:snapshot_id>")
+    def history_detail(snapshot_id: int):
+        from dia_organizer import profiles as _p
+        conn = db.open_db()
+        windows = applescript.list_tabs()
+        win_map = _p.resolve_live()
+        plan = snapshots.plan_rollback(conn, snapshot_id, windows, win_map, replace=False)
+        plan["snapshot_id"] = snapshot_id
+        rows = [dict(r) for r in snapshots.list_all(conn)]
+        return render_template("history.html", snapshots=rows, detail=plan)
+
+    @app.post("/history/<int:snapshot_id>/rollback")
+    def history_rollback(snapshot_id: int):
+        from dia_organizer import profiles as _p
+        replace = "replace" in request.form
+        conn = db.open_db()
+        windows = applescript.list_tabs()
+        win_map = _p.resolve_live()
+        if replace:
+            snapshots.take(conn, windows, win_map,
+                            label=f"pre-rollback-of-{snapshot_id}",
+                            trigger="pre-rollback", retention="manual",
+                            now=int(time.time()))
+        plan = snapshots.plan_rollback(conn, snapshot_id, windows, win_map, replace=replace)
+        for t in plan["to_open"]:
+            try:
+                applescript.make_tab(t["window_id"], t["url"])
+            except applescript.AppleScriptError:
+                pass
+        for t in plan["to_close"]:
+            try:
+                applescript.close_tab(t["window_id"], t["dia_tab_id"])
+            except applescript.AppleScriptError:
+                pass
+        return redirect(url_for("history_page"))
 
     return app

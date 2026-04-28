@@ -1,0 +1,28 @@
+<!-- src/dia_organizer/templates/history.html -->
+{% extends "base.html" %}
+{% block content %}
+<h1>History</h1>
+{% if not snapshots %}<p>No snapshots yet.</p>{% endif %}
+<ul class="snapshots">
+{% for s in snapshots %}
+  <li>
+    <a href="/history/{{ s['snapshot_id'] }}">
+      #{{ s['snapshot_id'] }} {{ s['label'] }} — {{ s['retention'] }}
+      ({{ s['tab_count'] }} tabs)
+    </a>
+  </li>
+{% endfor %}
+</ul>
+{% if detail %}
+<h2>Snapshot {{ detail['snapshot_id'] }}</h2>
+<p>Would reopen {{ detail['to_open']|length }} tabs. Would close {{ detail['to_close']|length }} tabs (only if --replace).</p>
+<form method="post" action="/history/{{ detail['snapshot_id'] }}/rollback">
+  <label><input type="checkbox" name="replace"> Replace (close tabs not in snapshot)</label>
+  <button type="submit">Restore</button>
+</form>
+<h3>Tabs to reopen</h3>
+<ul>
+{% for t in detail['to_open'] %}<li>{{ t['title'] }} — {{ t['url'] }}</li>{% endfor %}
+</ul>
+{% endif %}
+{% endblock %}
