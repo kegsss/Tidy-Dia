@@ -37,6 +37,38 @@ python3 -m venv .venv
 
 `~/.dia-organizer/config.toml` — see `docs/superpowers/specs/2026-04-28-dia-organizer-design.md` for the full schema.
 
+## Dia Tab-Group Bridge (optional)
+
+A small Manifest V3 extension lets `dia-organizer` create native Dia tab groups
+for your triage / auto-close candidates. Lives in `extension/tidy-dia-bridge/`.
+
+**Install (per Dia profile):**
+
+1. Make sure `dia-organizer serve` is running (`http://127.0.0.1:7321/`).
+2. Open `dia://extensions/` in the target Dia profile.
+3. Toggle **Developer mode** ON (top-right).
+4. Click **Load unpacked** → pick the folder `extension/tidy-dia-bridge`.
+5. The extension service worker polls `127.0.0.1:7321/ext/poll` every 5 s.
+
+**Usage:**
+
+```bash
+.venv/bin/dia-organizer corral-triage --idle-days 10
+.venv/bin/dia-organizer corral-autoclose --idle-days 10 --color red
+```
+
+Each command POSTs the candidate URL list to the running server. The extension
+picks it up on its next poll and uses `chrome.tabGroups` to create collapsed
+groups in whichever Dia windows contain those URLs.
+
+Notes:
+
+- The extension only groups tabs already open in the current Dia profile's
+  windows. URLs not currently open are skipped.
+- Tab groups are session-only in current Dia (`dia://saved-tab-groups-unsupported`).
+  Closing/reopening the window discards the grouping.
+- Install the extension separately into each Dia profile you want grouping in.
+
 ## Safety
 
 - Dry-run default for 7 days after install.

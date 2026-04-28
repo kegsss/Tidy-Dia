@@ -231,6 +231,84 @@ def preview(idle_days, protect_recent_days, triage_days, limit):
                 return
 
 
+def _post_extension_command(cfg, action: str, urls: list[str], title: str, color: str) -> None:
+    """POST a grouping command to the running Flask server's /ext endpoint.
+    Only works while `dia-organizer serve` is running."""
+    import json
+    import urllib.error
+    import urllib.request
+    body = json.dumps({"action": action, "urls": urls, "title": title, "color": color}).encode()
+    url = f"http://127.0.0.1:{cfg.ui_port}/ext/enqueue"
+    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            payload = json.loads(resp.read().decode())
+            click.echo(f"queued cmd id={payload.get('id')} ({len(urls)} urls) — extension will pick up within ~5s")
+    except urllib.error.URLError as e:
+        raise click.ClickException(
+            "Could not reach the dia-organizer server. Start it with "
+            "`dia-organizer serve` in another terminal first."
+        ) from e
+
+
+def _candidates_from_preview(idle_days: int) -> tuple[list[str], list[str]]:
+    """Run classifier with idle_days override, return (autoclose_urls, triage_urls)."""
+    from dia_organizer import classifier as _clf
+    cfg = cfgmod.load()
+    conn = db.open_db()
+    now = int(time.time())
+    rows = [dict(r) for r in conn.execute("SELECT * FROM tabs WHERE is_live=1")]
+    if idle_days > 0:
+        for r in rows:
+            r["last_seen"] = now - idle_days * 86_400
+            r["last_focused"] = now - idle_days * 86_400
+            if (now - r["first_seen"]) < idle_days * 86_400:
+                r["first_seen"] = now - idle_days * 86_400 - 1
+    auto, tri = [], []
+    for r in rows:
+        d = _clf.classify(r, rows, cfg, now)
+        if d.action == "AUTO_CLOSE":
+            auto.append(r["url"])
+        elif d.action == "TRIAGE":
+            tri.append(r["url"])
+    return auto, tri
+
+
+@main.command(name="corral-triage")
+@click.option("--idle-days", type=int, default=0,
+              help="Simulate idle days when picking candidates (0 = use real values).")
+@click.option("--title", default=None, help="Tab group title (default: 'Triage <date>').")
+@click.option("--color", default="yellow",
+              type=click.Choice(["grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"]))
+def corral_triage(idle_days, title, color):
+    """Group all current TRIAGE candidates into a Dia tab group via the bridge extension."""
+    cfg = cfgmod.load()
+    _, urls = _candidates_from_preview(idle_days)
+    if not urls:
+        click.echo("No TRIAGE candidates right now.")
+        return
+    import datetime as dt
+    t = title or f"Triage {dt.date.today().isoformat()}"
+    _post_extension_command(cfg, "group", urls, t, color)
+
+
+@main.command(name="corral-autoclose")
+@click.option("--idle-days", type=int, default=0)
+@click.option("--title", default=None, help="Tab group title (default: 'To Close <date>').")
+@click.option("--color", default="red",
+              type=click.Choice(["grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"]))
+def corral_autoclose(idle_days, title, color):
+    """Group all current AUTO_CLOSE candidates into a Dia tab group via the bridge extension."""
+    cfg = cfgmod.load()
+    urls, _ = _candidates_from_preview(idle_days)
+    if not urls:
+        click.echo("No AUTO_CLOSE candidates right now.")
+        return
+    import datetime as dt
+    t = title or f"To Close {dt.date.today().isoformat()}"
+    _post_extension_command(cfg, "group", urls, t, color)
+
+
 @main.command()
 def windows():
     """List Dia windows with current profile binding (auto + override)."""

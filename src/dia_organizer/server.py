@@ -1,8 +1,27 @@
 from __future__ import annotations
 import time
-from flask import Flask, render_template, redirect, request, url_for
+import threading
+import itertools
+from flask import Flask, render_template, redirect, request, url_for, jsonify
 
 from dia_organizer import applescript, archive, db, snapshots, triage
+
+
+# In-memory queue of pending commands for the Dia bridge extension.
+# This lives only in the running Flask process — extension polling is the
+# delivery mechanism, no persistence needed.
+_ext_lock = threading.Lock()
+_ext_id = itertools.count(1)
+_ext_queue: list[dict] = []
+_ext_results: dict[int, dict] = {}
+
+
+def enqueue_extension_command(action: str, **payload) -> int:
+    cmd_id = next(_ext_id)
+    cmd = {"id": cmd_id, "action": action, **payload}
+    with _ext_lock:
+        _ext_queue.append(cmd)
+    return cmd_id
 
 
 def create_app() -> Flask:
@@ -11,6 +30,44 @@ def create_app() -> Flask:
     @app.route("/")
     def index():
         return redirect(url_for("triage_page"))
+
+    @app.get("/ext/poll")
+    def ext_poll():
+        with _ext_lock:
+            cmds = list(_ext_queue)
+            _ext_queue.clear()
+        return jsonify(cmds)
+
+    @app.post("/ext/result")
+    def ext_result():
+        data = request.get_json(silent=True) or {}
+        cid = data.get("id")
+        if cid is not None:
+            with _ext_lock:
+                _ext_results[cid] = data
+        return ("", 204)
+
+    @app.get("/ext/status")
+    def ext_status():
+        with _ext_lock:
+            return jsonify({
+                "queue_size": len(_ext_queue),
+                "results": list(_ext_results.values())[-20:],
+            })
+
+    @app.post("/ext/enqueue")
+    def ext_enqueue():
+        data = request.get_json(silent=True) or {}
+        action = data.get("action")
+        if not action:
+            return jsonify({"error": "missing action"}), 400
+        cid = enqueue_extension_command(
+            action,
+            urls=data.get("urls", []),
+            title=data.get("title", "Triage"),
+            color=data.get("color", "grey"),
+        )
+        return jsonify({"id": cid})
 
     @app.route("/triage")
     def triage_page():
