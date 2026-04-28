@@ -15,7 +15,8 @@ def main():
 
 @main.command()
 @click.option("--dry-run", is_flag=True, help="Force dry-run regardless of config")
-def scan(dry_run: bool):
+@click.option("-v", "--verbose", is_flag=True, help="List per-tab close/triage candidates")
+def scan(dry_run: bool, verbose: bool):
     cfg = cfgmod.load()
     if dry_run:
         import datetime as dt
@@ -37,6 +38,11 @@ def scan(dry_run: bool):
         ))
         for r in live:
             click.echo(f"  {r['profile']}: {r['n']} live tabs")
+        if verbose:
+            for c in res.get("auto_close_candidates", []):
+                click.echo(f"  CLOSE [{c['reason']}] [{c['profile']}] {c['title'][:60]} — {c['url']}")
+            for c in res.get("triage_candidates", []):
+                click.echo(f"  TRIAGE [{c['reason']}] [{c['profile']}] {c['title'][:60]} — {c['url']}")
 
 
 @main.command()

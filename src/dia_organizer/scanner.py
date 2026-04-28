@@ -135,6 +135,16 @@ def run_scan(conn: sqlite3.Connection, cfg: Config, now: int | None = None) -> d
         "closed": len(closed),
         "triaged": len(triage_targets),
         "rate_limited": rate_limited,
+        "auto_close_candidates": [
+            {"archive_id": r["archive_id"], "profile": r["profile"],
+             "title": r["title"], "url": r["url"], "reason": d.reason}
+            for r, d in will_auto_close
+        ],
+        "triage_candidates": [
+            {"archive_id": r["archive_id"], "profile": r["profile"],
+             "title": r["title"], "url": r["url"], "reason": d.reason}
+            for r, d in triage_targets
+        ],
     }
 
 
