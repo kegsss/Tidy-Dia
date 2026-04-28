@@ -1,0 +1,26 @@
+<!-- src/dia_organizer/templates/archive.html -->
+{% extends "base.html" %}
+{% block content %}
+<h1>Archive</h1>
+<form method="get" action="/archive">
+  <input type="search" name="q" value="{{ q }}" placeholder="search archive…">
+  <button type="submit">Search</button>
+</form>
+{% if results %}
+<ul class="results">
+{% for r in results %}
+  <li>
+    <div class="title">{{ r['title'] }}</div>
+    <div class="url"><a href="{{ r['url'] }}">{{ r['url'] }}</a></div>
+    <div class="meta">{{ r['profile'] }} • {{ r['close_reason'] }}</div>
+    {% if r['meta_desc'] %}<div class="desc">{{ r['meta_desc'] }}</div>{% endif %}
+    <form method="post" action="/archive/{{ r['archive_id'] }}/reopen" class="inline">
+      <button type="submit">Reopen</button>
+    </form>
+  </li>
+{% endfor %}
+</ul>
+{% elif q %}
+  <p>No matches for "{{ q }}".</p>
+{% endif %}
+{% endblock %}

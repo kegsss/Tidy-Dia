@@ -64,3 +64,39 @@ def test_triage_close_action_archives_and_calls_applescript(tmp_data_dir, monkey
     ).fetchone()
     assert row["is_live"] == 0
     assert row["close_reason"] == "triage:close"
+
+
+def test_archive_search_returns_matches(tmp_data_dir):
+    conn = db.open_db()
+    rec = archive.upsert_live(conn, {
+        "dia_tab_id": "t1", "profile": "Keagan", "window_id": "w1",
+        "title": "Tailwind dark mode", "url": "https://x/y",
+        "pinned": False, "focused": False, "now": 1,
+        "meta_desc": "css", "h1": "Dark",
+    })
+    archive.mark_closed(conn, rec.archive_id, "manual", 2)
+    conn.close()
+    app = server.create_app()
+    client = app.test_client()
+    res = client.get("/archive?q=tailwind")
+    assert res.status_code == 200
+    assert b"Tailwind dark mode" in res.data
+
+
+def test_archive_reopen_calls_applescript(tmp_data_dir, monkeypatch):
+    conn = db.open_db()
+    rec = archive.upsert_live(conn, {
+        "dia_tab_id": "t1", "profile": "Keagan", "window_id": "w1",
+        "title": "X", "url": "https://x/y", "pinned": False,
+        "focused": False, "now": 1,
+    })
+    archive.mark_closed(conn, rec.archive_id, "manual", 2)
+    conn.close()
+    seen = []
+    monkeypatch.setattr("dia_organizer.applescript.make_tab",
+                         lambda w, u: seen.append((w, u)) or "newid")
+    app = server.create_app()
+    client = app.test_client()
+    res = client.post(f"/archive/{rec.archive_id}/reopen")
+    assert res.status_code in (200, 302)
+    assert seen == [("w1", "https://x/y")]

@@ -48,7 +48,24 @@ def create_app() -> Flask:
 
     @app.route("/archive")
     def archive_page():
-        return "archive (todo)"
+        q = (request.args.get("q") or "").strip()
+        results = []
+        if q:
+            conn = db.open_db()
+            results = [dict(r) for r in archive.search(conn, q)]
+        return render_template("archive.html", q=q, results=results)
+
+    @app.post("/archive/<int:archive_id>/reopen")
+    def archive_reopen(archive_id: int):
+        conn = db.open_db()
+        row = archive.reopen_record(conn, archive_id)
+        if row is None:
+            return ("not found", 404)
+        try:
+            applescript.make_tab(row["window_id"], row["url"])
+        except applescript.AppleScriptError:
+            pass
+        return redirect(url_for("archive_page", q=request.args.get("q", "")))
 
     @app.route("/history")
     def history_page():
