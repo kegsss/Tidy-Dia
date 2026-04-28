@@ -2,6 +2,7 @@ import time
 from unittest.mock import patch
 from click.testing import CliRunner
 from dia_organizer import cli, db, archive
+from dia_organizer import snapshots
 
 
 def test_scan_command_invokes_run_scan(tmp_data_dir):
@@ -45,3 +46,35 @@ def test_undo_reopens_recent(tmp_data_dir):
         res = runner.invoke(cli.main, ["undo"])
     assert res.exit_code == 0
     assert p.called
+
+
+def test_snapshot_create_and_list(tmp_data_dir):
+    runner = CliRunner()
+    with patch("dia_organizer.applescript.list_tabs",
+               return_value=[{"window_id": "w1", "name": "n",
+                              "tabs": [{"dia_tab_id": "t1", "title": "T",
+                                         "url": "https://a", "pinned": False,
+                                         "focused": False}]}]), \
+         patch("dia_organizer.profiles.resolve_live", return_value={"w1": "Keagan"}):
+        runner.invoke(cli.main, ["snapshot", "--label", "first"])
+        res = runner.invoke(cli.main, ["snapshots"])
+    assert res.exit_code == 0
+    assert "first" in res.output
+
+
+def test_rollback_dry_run(tmp_data_dir):
+    runner = CliRunner()
+    with patch("dia_organizer.applescript.list_tabs",
+               return_value=[{"window_id": "w1", "name": "n",
+                              "tabs": [{"dia_tab_id": "t1", "title": "T",
+                                         "url": "https://a", "pinned": False,
+                                         "focused": False}]}]), \
+         patch("dia_organizer.profiles.resolve_live", return_value={"w1": "Keagan"}):
+        runner.invoke(cli.main, ["snapshot", "--label", "first"])
+        # mutate "live" state to be empty
+    with patch("dia_organizer.applescript.list_tabs",
+               return_value=[{"window_id": "w1", "name": "n", "tabs": []}]), \
+         patch("dia_organizer.profiles.resolve_live", return_value={"w1": "Keagan"}):
+        res = runner.invoke(cli.main, ["rollback", "1", "--dry-run"])
+    assert res.exit_code == 0
+    assert "would reopen" in res.output.lower()
