@@ -1,8 +1,11 @@
 from __future__ import annotations
+import shutil
+import subprocess
+import sys
 import time
 import click
 
-from dia_organizer import applescript, archive, config as cfgmod, db, scanner, server, snapshots, triage as triage_mod
+from dia_organizer import applescript, archive, config as cfgmod, db, paths as paths_mod, scanner, scheduling, server, snapshots, triage as triage_mod
 
 
 @click.group()
@@ -157,6 +160,34 @@ def serve(port: int | None, host: str):
     app = server.create_app()
     click.echo(f"serving on http://{host}:{p}/")
     app.run(host=host, port=p)
+
+
+@main.command(name="install-schedule")
+def install_schedule():
+    cfg = cfgmod.load()
+    paths_mod.ensure_data_home()
+    binary = shutil.which("dia-organizer") or sys.executable + " -m dia_organizer.cli"
+    plist = scheduling.render_plist(
+        binary=binary,
+        interval_seconds=cfg.scan_interval_minutes * 60,
+        log_path=str(paths_mod.log_path()),
+        err_path=str(paths_mod.err_path()),
+    )
+    p = scheduling.plist_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(plist)
+    subprocess.run(["launchctl", "unload", str(p)], capture_output=True)
+    subprocess.run(["launchctl", "load", str(p)], check=True)
+    click.echo(f"installed: {p}")
+
+
+@main.command(name="uninstall-schedule")
+def uninstall_schedule():
+    p = scheduling.plist_path()
+    subprocess.run(["launchctl", "unload", str(p)], capture_output=True)
+    if p.exists():
+        p.unlink()
+    click.echo("uninstalled")
 
 
 if __name__ == "__main__":
