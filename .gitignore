@@ -8,3 +8,4 @@ venv/
 htmlcov/
 dist/
 build/
+.claude/
