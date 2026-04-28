@@ -59,10 +59,24 @@ def create_app() -> Flask:
 
     @app.post("/ext/tabs")
     def ext_tabs():
+        import json as _json
         data = request.get_json(silent=True) or {}
         key = data.get("profile_hint") or "_unknown_"
+        tabs = data.get("tabs", [])
         with _ext_lock:
-            _ext_tab_dumps[key] = {"received_at": int(time.time()), "tabs": data.get("tabs", [])}
+            _ext_tab_dumps[key] = {"received_at": int(time.time()), "tabs": tabs}
+        # Persist URL set so out-of-process scanner runs can read it.
+        if key != "_unknown_":
+            try:
+                conn = db.open_db()
+                urls = [t.get("url") for t in tabs if t.get("url")]
+                conn.execute(
+                    "INSERT OR REPLACE INTO extension_tab_dumps(profile, taken_at, urls_json) VALUES (?,?,?)",
+                    (key, int(time.time()), _json.dumps(urls)),
+                )
+                conn.commit()
+            except Exception:
+                pass
         return ("", 204)
 
     @app.get("/ext/tabs-latest")

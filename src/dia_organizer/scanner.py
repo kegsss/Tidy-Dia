@@ -27,13 +27,48 @@ def run_scan(conn: sqlite3.Connection, cfg: Config, now: int | None = None) -> d
     win_to_profile = profiles.apply_overrides(profiles.resolve_live(), conn)
     windows = applescript.list_tabs()
 
-    # 1. Upsert all live tabs (and capture context for new/changed URLs)
+    # Load fresh extension tab dumps (within last 5 min) per profile. AppleScript
+    # over-reports phantom tabs that Chrome no longer renders; we trust the
+    # extension's chrome.tabs.query() as ground truth when available.
+    DUMP_MAX_AGE = 5 * 60
+    ext_url_keys: dict[str, set[str]] = {}
+    from urllib.parse import urlparse
+    def _keys(u: str) -> set[str]:
+        out = {u}
+        try:
+            p = urlparse(u)
+            if p.scheme and p.netloc:
+                out.add(f"{p.scheme}://{p.netloc}{p.path}")
+                out.add(f"{p.scheme}://{p.netloc}{p.path}?{p.query}")
+        except Exception:
+            pass
+        return out
+    import json as _json
+    for row in conn.execute(
+        "SELECT profile, taken_at, urls_json FROM extension_tab_dumps"
+    ):
+        if (n - row["taken_at"]) > DUMP_MAX_AGE:
+            continue
+        urls = _json.loads(row["urls_json"])
+        keys = set()
+        for u in urls:
+            keys |= _keys(u)
+        ext_url_keys[row["profile"]] = keys
+
+    # 1. Upsert all live tabs (and capture context for new/changed URLs).
+    # When an extension dump is available for a profile, skip AppleScript tabs
+    # whose URL doesn't match a Chrome-visible URL (phantoms).
     seen_per_profile: dict[str, set[str]] = {}
     all_records: list[dict] = []
+    skipped_phantoms = 0
     for w in windows:
         profile = win_to_profile.get(w["window_id"], "<unknown>")
         seen_per_profile.setdefault(profile, set())
+        keys_for_profile = ext_url_keys.get(profile)
         for t in w["tabs"]:
+            if keys_for_profile is not None and not (_keys(t["url"]) & keys_for_profile):
+                skipped_phantoms += 1
+                continue
             existing = conn.execute(
                 "SELECT * FROM tabs WHERE dia_tab_id=? AND profile=? AND is_live=1",
                 (t["dia_tab_id"], profile),
@@ -135,6 +170,7 @@ def run_scan(conn: sqlite3.Connection, cfg: Config, now: int | None = None) -> d
         "closed": len(closed),
         "triaged": len(triage_targets),
         "rate_limited": rate_limited,
+        "phantoms_skipped": skipped_phantoms,
         "auto_close_candidates": [
             {"archive_id": r["archive_id"], "profile": r["profile"],
              "title": r["title"], "url": r["url"], "reason": d.reason}

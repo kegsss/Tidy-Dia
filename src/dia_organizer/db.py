@@ -94,6 +94,12 @@ CREATE TABLE IF NOT EXISTS snapshot_tabs (
 );
 CREATE INDEX IF NOT EXISTS idx_snap_tabs_profile ON snapshot_tabs(snapshot_id, profile);
 
+CREATE TABLE IF NOT EXISTS extension_tab_dumps (
+  profile        TEXT PRIMARY KEY,
+  taken_at       INTEGER NOT NULL,
+  urls_json      TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS config_window_profiles (
   window_id      TEXT PRIMARY KEY,
   profile        TEXT,
