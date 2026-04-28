@@ -373,10 +373,12 @@ def reconcile(profile, wait_seconds, dry_run):
     config (e.g. "Together User", "Keagan").
     """
     import json
+    import urllib.parse
     import urllib.request
     import urllib.error
     cfg = cfgmod.load()
     base = f"http://127.0.0.1:{cfg.ui_port}"
+    profile_q = urllib.parse.quote(profile, safe="")
     # Ask the extension to dump its tabs.
     try:
         req = urllib.request.Request(
@@ -393,7 +395,7 @@ def reconcile(profile, wait_seconds, dry_run):
     tabs_payload = None
     while time.time() < deadline:
         try:
-            with urllib.request.urlopen(f"{base}/ext/tabs-latest?profile={profile}", timeout=3) as resp:
+            with urllib.request.urlopen(f"{base}/ext/tabs-latest?profile={profile_q}", timeout=3) as resp:
                 payload = json.loads(resp.read().decode())
             if payload.get("received_at") and (int(time.time()) - payload["received_at"]) <= wait_seconds:
                 tabs_payload = payload
