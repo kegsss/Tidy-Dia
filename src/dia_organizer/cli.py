@@ -27,9 +27,16 @@ def scan(dry_run: bool):
         notifications.notify("Dia Organizer", f"{res['triaged']} tabs queued for triage")
     click.echo(
         f"status={res.get('status')} dry_run={res.get('dry_run')} "
+        f"would_close={res.get('would_close_count', 0)} "
         f"closed={res.get('closed', 0)} triaged={res.get('triaged', 0)} "
         f"rate_limited={res.get('rate_limited', 0)}"
     )
+    if res.get("status") == "ok":
+        live = list(conn.execute(
+            "SELECT profile, COUNT(*) AS n FROM tabs WHERE is_live=1 GROUP BY profile ORDER BY n DESC"
+        ))
+        for r in live:
+            click.echo(f"  {r['profile']}: {r['n']} live tabs")
 
 
 @main.command()
