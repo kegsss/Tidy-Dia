@@ -357,6 +357,98 @@ def corral_autoclose(idle_days, title, color, no_refresh):
 
 
 @main.command()
+@click.argument("profile")
+@click.option("--wait-seconds", type=int, default=10,
+              help="How long to wait for the extension to upload its tab list.")
+@click.option("--dry-run", is_flag=True)
+def reconcile(profile, wait_seconds, dry_run):
+    """Reconcile DB tabs against the extension's live Chrome tab set.
+
+    Marks any DB row in PROFILE that has no live Chrome tab matching its URL
+    as is_live=0 (close_reason='external:phantom'). Use after noticing
+    AppleScript-vs-Chrome tab-count drift.
+
+    Requires `dia-organizer serve` running and the bridge extension installed
+    in the target Dia profile. PROFILE must match a profile name in your
+    config (e.g. "Together User", "Keagan").
+    """
+    import json
+    import urllib.request
+    import urllib.error
+    cfg = cfgmod.load()
+    base = f"http://127.0.0.1:{cfg.ui_port}"
+    # Ask the extension to dump its tabs.
+    try:
+        req = urllib.request.Request(
+            f"{base}/ext/enqueue",
+            data=json.dumps({"action": "dump-tabs", "profile_hint": profile}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=3):
+            pass
+    except urllib.error.URLError:
+        raise click.ClickException("Server not reachable. Run `dia-organizer serve` first.")
+    # Poll for the result.
+    deadline = time.time() + wait_seconds
+    tabs_payload = None
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(f"{base}/ext/tabs-latest?profile={profile}", timeout=3) as resp:
+                payload = json.loads(resp.read().decode())
+            if payload.get("received_at") and (int(time.time()) - payload["received_at"]) <= wait_seconds:
+                tabs_payload = payload
+                break
+        except urllib.error.URLError:
+            pass
+        time.sleep(1)
+    if not tabs_payload:
+        raise click.ClickException(
+            "Did not receive a tab dump from the extension within the wait window. "
+            "Check that the bridge extension is loaded in this Dia profile and the "
+            "service worker is alive (dia://extensions → Inspect views → service worker)."
+        )
+    live_urls = {t["url"] for t in tabs_payload["tabs"] if t.get("url")}
+    # Build relaxed match keys (origin+path) for tolerance to query/hash drift.
+    from urllib.parse import urlparse
+    def keys(u):
+        out = {u}
+        try:
+            p = urlparse(u)
+            if p.scheme and p.netloc:
+                out.add(f"{p.scheme}://{p.netloc}{p.path}")
+                out.add(f"{p.scheme}://{p.netloc}{p.path}?{p.query}")
+        except Exception:
+            pass
+        return out
+    live_match_set = set()
+    for u in live_urls:
+        live_match_set |= keys(u)
+    conn = db.open_db()
+    rows = list(conn.execute(
+        "SELECT archive_id, dia_tab_id, url FROM tabs WHERE is_live=1 AND profile=?",
+        (profile,),
+    ))
+    phantoms = []
+    for r in rows:
+        if not (keys(r["url"]) & live_match_set):
+            phantoms.append(r)
+    click.echo(
+        f"profile={profile} db_live={len(rows)} chrome_live={len(live_urls)} "
+        f"phantoms={len(phantoms)}"
+    )
+    if dry_run or not phantoms:
+        for r in phantoms[:30]:
+            click.echo(f"  PHANTOM {r['url']}")
+        if len(phantoms) > 30:
+            click.echo(f"  ... +{len(phantoms)-30} more")
+        return
+    now = int(time.time())
+    for r in phantoms:
+        archive.mark_closed(conn, r["archive_id"], "external:phantom", now)
+    click.echo(f"marked {len(phantoms)} rows as is_live=0 (close_reason=external:phantom)")
+
+
+@main.command()
 def windows():
     """List Dia windows with current profile binding (auto + override)."""
     conn = db.open_db()

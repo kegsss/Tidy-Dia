@@ -27,6 +27,20 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 });
 
 async function handle(cmd) {
+  if (cmd.action === "dump-tabs") {
+    const all = await chrome.tabs.query({});
+    const tabs = all.map(t => ({
+      id: t.id, windowId: t.windowId, url: t.url || "",
+      pinned: !!t.pinned, status: t.status || ""
+    }));
+    try {
+      await fetch("http://127.0.0.1:7321/ext/tabs", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ id: cmd.id, profile_hint: cmd.profile_hint || null, tabs })
+      });
+    } catch (_) {}
+    return reportResult(cmd.id, true, JSON.stringify({ count: tabs.length }));
+  }
   if (cmd.action !== "group") return reportResult(cmd.id, false, "unknown action");
   const urls = cmd.urls || [];
   const title = cmd.title || "Triage";

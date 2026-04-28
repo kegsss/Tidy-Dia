@@ -14,6 +14,8 @@ _ext_lock = threading.Lock()
 _ext_id = itertools.count(1)
 _ext_queue: list[dict] = []
 _ext_results: dict[int, dict] = {}
+# Latest tab dumps from extensions, keyed by profile_hint (or "_unknown_").
+_ext_tab_dumps: dict[str, dict] = {}
 
 
 def enqueue_extension_command(action: str, **payload) -> int:
@@ -54,6 +56,20 @@ def create_app() -> Flask:
                 "queue_size": len(_ext_queue),
                 "results": list(_ext_results.values())[-20:],
             })
+
+    @app.post("/ext/tabs")
+    def ext_tabs():
+        data = request.get_json(silent=True) or {}
+        key = data.get("profile_hint") or "_unknown_"
+        with _ext_lock:
+            _ext_tab_dumps[key] = {"received_at": int(time.time()), "tabs": data.get("tabs", [])}
+        return ("", 204)
+
+    @app.get("/ext/tabs-latest")
+    def ext_tabs_latest():
+        key = request.args.get("profile") or "_unknown_"
+        with _ext_lock:
+            return jsonify(_ext_tab_dumps.get(key) or {"received_at": 0, "tabs": []})
 
     @app.post("/ext/enqueue")
     def ext_enqueue():
