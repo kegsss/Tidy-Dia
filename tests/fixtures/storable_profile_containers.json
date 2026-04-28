@@ -1,0 +1,11 @@
+{
+  "version": 3,
+  "containers": [
+    {"id": {"profileID": "Default",
+             "container": {"window": {"_0": "AAAA-WIN-DEFAULT"}}}, "tabs": []},
+    {"id": {"profileID": "Profile 1",
+             "container": {"window": {"_0": "BBBB-WIN-TOGETHER"}}}, "tabs": []},
+    {"id": {"profileID": "Profile 7",
+             "container": {"favorites": {}}}, "tabs": []}
+  ]
+}
