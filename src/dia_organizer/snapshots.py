@@ -95,3 +95,17 @@ def delete(conn: sqlite3.Connection, snapshot_id: int) -> None:
     conn.execute("DELETE FROM snapshot_tabs WHERE snapshot_id=?", (snapshot_id,))
     conn.execute("DELETE FROM snapshots WHERE snapshot_id=?", (snapshot_id,))
     conn.commit()
+
+
+def plan_rollback(conn: sqlite3.Connection, snapshot_id: int,
+                   current_windows: list[dict],
+                   window_to_profile: dict[str, str],
+                   replace: bool,
+                   profile_filter: str | None = None) -> dict:
+    d = diff(conn, snapshot_id, current_windows, window_to_profile)
+    to_open = d["missing_from_current"]
+    to_close = d["new_since_snapshot"] if replace else []
+    if profile_filter:
+        to_open = [t for t in to_open if t["profile"] == profile_filter]
+        to_close = [t for t in to_close if t["profile"] == profile_filter]
+    return {"to_open": to_open, "to_close": to_close}

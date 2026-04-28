@@ -69,3 +69,36 @@ def test_diff_against_current(tmp_data_dir):
     diff = snapshots.diff(conn, sid, current, {"w1": "Keagan"})
     assert {x["dia_tab_id"] for x in diff["missing_from_current"]} == {"t2"}
     assert {x["dia_tab_id"] for x in diff["new_since_snapshot"]} == {"t9"}
+
+
+def test_rollback_additive_dry_run(tmp_data_dir):
+    conn = db.open_db()
+    sid = snapshots.take(conn, _windows(), {"w1": "Keagan"},
+                         label="x", trigger="manual",
+                         retention="manual", now=100)
+    current = [{
+        "window_id": "w1", "name": "WinA",
+        "tabs": [
+            {"dia_tab_id": "t1", "title": "Tab1", "url": "https://a", "pinned": False, "focused": False},
+        ],
+    }]
+    plan = snapshots.plan_rollback(conn, sid, current, {"w1": "Keagan"}, replace=False)
+    assert [t["dia_tab_id"] for t in plan["to_open"]] == ["t2"]
+    assert plan["to_close"] == []
+
+
+def test_rollback_replace_includes_closes(tmp_data_dir):
+    conn = db.open_db()
+    sid = snapshots.take(conn, _windows(), {"w1": "Keagan"},
+                         label="x", trigger="manual",
+                         retention="manual", now=100)
+    current = [{
+        "window_id": "w1", "name": "WinA",
+        "tabs": [
+            {"dia_tab_id": "t1", "title": "Tab1", "url": "https://a", "pinned": False, "focused": False},
+            {"dia_tab_id": "tNew", "title": "N", "url": "https://n", "pinned": False, "focused": False},
+        ],
+    }]
+    plan = snapshots.plan_rollback(conn, sid, current, {"w1": "Keagan"}, replace=True)
+    assert {t["dia_tab_id"] for t in plan["to_close"]} == {"tNew"}
+    assert {t["dia_tab_id"] for t in plan["to_open"]}  == {"t2"}
