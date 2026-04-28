@@ -183,7 +183,10 @@ def profiles_module():
 @click.option("--triage-days", type=int, default=None,
               help="Override config.triage_threshold_days for this preview only.")
 @click.option("--limit", type=int, default=200, help="Max rows to print")
-def preview(idle_days, protect_recent_days, triage_days, limit):
+@click.option("--show-protected", is_flag=True,
+              help="Also list PROTECT tabs with the reason they were protected")
+@click.option("--profile", default=None, help="Only show tabs in this profile")
+def preview(idle_days, protect_recent_days, triage_days, limit, show_protected, profile):
     """Show what classifier WOULD decide right now with optionally relaxed
     thresholds. NO DB writes, NO closes. Uses tabs already recorded in DB.
 
@@ -204,6 +207,8 @@ def preview(idle_days, protect_recent_days, triage_days, limit):
     conn = db.open_db()
     now = int(time.time())
     rows = [dict(r) for r in conn.execute("SELECT * FROM tabs WHERE is_live=1")]
+    if profile:
+        rows = [r for r in rows if r["profile"] == profile]
     if idle_days is not None:
         for r in rows:
             r["last_seen"] = now - idle_days * 86_400
@@ -219,6 +224,27 @@ def preview(idle_days, protect_recent_days, triage_days, limit):
                f"AUTO_CLOSE={len(by_action['AUTO_CLOSE'])} "
                f"TRIAGE={len(by_action['TRIAGE'])} "
                f"KEEP={len(by_action['KEEP'])}")
+    if show_protected:
+        # Bucket PROTECT tabs by which rule shielded them.
+        from urllib.parse import urlparse
+        prot_buckets = {"pinned": [], "allowlist": [], "selection": [],
+                        "recent_or_whitelist_url": []}
+        for r, _d in by_action["PROTECT"]:
+            if r.get("pinned"):
+                prot_buckets["pinned"].append(r)
+                continue
+            if r.get("selection"):
+                prot_buckets["selection"].append(r)
+                continue
+            domain = (urlparse(r["url"]).hostname or "").lower()
+            pcfg = cfg.profile(r["profile"])
+            if any(domain == d or domain.endswith("." + d) for d in pcfg.allowlist_domains):
+                prot_buckets["allowlist"].append(r)
+                continue
+            prot_buckets["recent_or_whitelist_url"].append(r)
+        click.echo("PROTECT breakdown:")
+        for bucket, items in prot_buckets.items():
+            click.echo(f"  {bucket}: {len(items)}")
     shown = 0
     for action in ("AUTO_CLOSE", "TRIAGE"):
         for r, d in by_action[action]:
@@ -229,6 +255,14 @@ def preview(idle_days, protect_recent_days, triage_days, limit):
                 click.echo(f"  ... (showing {limit} of "
                            f"{len(by_action['AUTO_CLOSE']) + len(by_action['TRIAGE'])})")
                 return
+    if show_protected:
+        click.echo("--- PROTECT details ---")
+        for bucket, items in prot_buckets.items():
+            for r in items[:30]:
+                click.echo(f"  PROTECT [{bucket}] [{r['profile']}] "
+                           f"{(r['title'] or '')[:60]} — {r['url']}")
+            if len(items) > 30:
+                click.echo(f"  ... +{len(items)-30} more in {bucket}")
 
 
 def _post_extension_command(cfg, action: str, urls: list[str], title: str, color: str) -> None:
