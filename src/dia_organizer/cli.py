@@ -15,12 +15,21 @@ def main():
 
 @main.command()
 @click.option("--dry-run", is_flag=True, help="Force dry-run regardless of config")
+@click.option("--no-close", is_flag=True, help="Alias for --dry-run (no tabs closed)")
 @click.option("-v", "--verbose", is_flag=True, help="List per-tab close/triage candidates")
-def scan(dry_run: bool, verbose: bool):
+@click.option("--triage-days", type=int, default=None,
+              help="Override config.triage_threshold_days for this scan only")
+@click.option("--protect-recent-days", type=int, default=None,
+              help="Override config.protect_recent_days for this scan only")
+def scan(dry_run: bool, no_close: bool, verbose: bool, triage_days, protect_recent_days):
     cfg = cfgmod.load()
-    if dry_run:
+    if dry_run or no_close:
         import datetime as dt
         cfg.dry_run_until = dt.date.today() + dt.timedelta(days=1)
+    if triage_days is not None:
+        cfg.triage_threshold_days = triage_days
+    if protect_recent_days is not None:
+        cfg.protect_recent_days = protect_recent_days
     conn = db.open_db()
     res = scanner.run_scan_cli_safe(conn, cfg)
     if cfg.notify_on_triage_queue_growth and res.get("triaged", 0) > 0:
