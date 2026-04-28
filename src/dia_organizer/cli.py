@@ -5,7 +5,7 @@ import sys
 import time
 import click
 
-from dia_organizer import applescript, archive, config as cfgmod, db, paths as paths_mod, scanner, scheduling, server, snapshots, triage as triage_mod
+from dia_organizer import applescript, archive, config as cfgmod, db, paths as paths_mod, scanner, scheduling, server, snapshots
 
 
 @click.group()
