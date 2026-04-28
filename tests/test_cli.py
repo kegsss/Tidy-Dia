@@ -78,3 +78,16 @@ def test_rollback_dry_run(tmp_data_dir):
         res = runner.invoke(cli.main, ["rollback", "1", "--dry-run"])
     assert res.exit_code == 0
     assert "would reopen" in res.output.lower()
+
+
+def test_serve_command_has_port(tmp_data_dir):
+    runner = CliRunner()
+    with patch("dia_organizer.cli.server.create_app") as mk:
+        fake_app = mk.return_value
+        res = runner.invoke(cli.main, ["serve", "--port", "5599", "--host", "127.0.0.1"])
+    assert res.exit_code == 0
+    assert mk.called
+    fake_app.run.assert_called_once()
+    kwargs = fake_app.run.call_args.kwargs
+    assert kwargs.get("port") == 5599
+    assert kwargs.get("host") == "127.0.0.1"

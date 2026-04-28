@@ -2,7 +2,7 @@ from __future__ import annotations
 import time
 import click
 
-from dia_organizer import applescript, archive, config as cfgmod, db, scanner, snapshots, triage as triage_mod
+from dia_organizer import applescript, archive, config as cfgmod, db, scanner, server, snapshots, triage as triage_mod
 
 
 @click.group()
@@ -145,6 +145,18 @@ def rollback(snapshot_id: int, profile: str | None, dry_run: bool, replace: bool
 def profiles_module():
     from dia_organizer import profiles as _p
     return _p
+
+
+@main.command()
+@click.option("--port", type=int, default=None, help="UI port (defaults to config.ui_port)")
+@click.option("--host", default="127.0.0.1", help="Bind host")
+def serve(port: int | None, host: str):
+    """Run the Flask triage UI server."""
+    cfg = cfgmod.load()
+    p = port if port is not None else cfg.ui_port
+    app = server.create_app()
+    click.echo(f"serving on http://{host}:{p}/")
+    app.run(host=host, port=p)
 
 
 if __name__ == "__main__":
