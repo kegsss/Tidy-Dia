@@ -58,7 +58,10 @@ async function handle(cmd) {
     if (live.length === 0) continue;
     // Try the whole batch first; on failure, halve repeatedly until each
     // surviving subgroup succeeds. This isolates the bad TabSessionIDs.
-    const groupedThisWindow = await groupResilient(windowId, live, title, color);
+    // Carry a single groupId across sub-batches so we end up with ONE Dia
+    // group per window instead of N collapsed groups with the same title.
+    const ctx = { groupId: null };
+    const groupedThisWindow = await groupResilient(windowId, live, title, color, ctx);
     grouped += groupedThisWindow.grouped;
     groupCount += groupedThisWindow.groups;
     for (const e of groupedThisWindow.errors) errors.push(e);
@@ -68,21 +71,29 @@ async function handle(cmd) {
     JSON.stringify({ groupCount, grouped, skipped, errors: errors.slice(0, 5) }));
 }
 
-async function groupResilient(windowId, tabIds, title, color) {
+async function groupResilient(windowId, tabIds, title, color, ctx) {
   if (tabIds.length === 0) return { grouped: 0, groups: 0, errors: [], skipped: 0 };
   try {
-    const groupId = await chrome.tabs.group({ createProperties: { windowId }, tabIds });
-    try {
-      await chrome.tabGroups.update(groupId, { title, color, collapsed: true });
-    } catch (_) { /* title/color may not stick on Dia, ignore */ }
-    return { grouped: tabIds.length, groups: 1, errors: [], skipped: 0 };
+    let groupId;
+    if (ctx.groupId == null) {
+      groupId = await chrome.tabs.group({ createProperties: { windowId }, tabIds });
+      ctx.groupId = groupId;
+      try {
+        await chrome.tabGroups.update(groupId, { title, color, collapsed: true });
+      } catch (_) { /* title/color may not stick on Dia, ignore */ }
+      return { grouped: tabIds.length, groups: 1, errors: [], skipped: 0 };
+    } else {
+      // Add to the existing group instead of creating a new one.
+      await chrome.tabs.group({ groupId: ctx.groupId, tabIds });
+      return { grouped: tabIds.length, groups: 0, errors: [], skipped: 0 };
+    }
   } catch (e) {
     if (tabIds.length === 1) {
       return { grouped: 0, groups: 0, errors: [String(e)], skipped: 1 };
     }
     const mid = Math.floor(tabIds.length / 2);
-    const left  = await groupResilient(windowId, tabIds.slice(0, mid), title, color);
-    const right = await groupResilient(windowId, tabIds.slice(mid),    title, color);
+    const left  = await groupResilient(windowId, tabIds.slice(0, mid), title, color, ctx);
+    const right = await groupResilient(windowId, tabIds.slice(mid),    title, color, ctx);
     return {
       grouped: left.grouped + right.grouped,
       groups:  left.groups  + right.groups,
