@@ -21,7 +21,10 @@ def scan(dry_run: bool):
         import datetime as dt
         cfg.dry_run_until = dt.date.today() + dt.timedelta(days=1)
     conn = db.open_db()
-    res = scanner.run_scan(conn, cfg)
+    res = scanner.run_scan_cli_safe(conn, cfg)
+    if cfg.notify_on_triage_queue_growth and res.get("triaged", 0) > 0:
+        from dia_organizer import notifications
+        notifications.notify("Dia Organizer", f"{res['triaged']} tabs queued for triage")
     click.echo(
         f"status={res.get('status')} dry_run={res.get('dry_run')} "
         f"closed={res.get('closed', 0)} triaged={res.get('triaged', 0)} "

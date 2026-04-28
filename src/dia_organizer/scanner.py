@@ -116,3 +116,14 @@ def run_scan(conn: sqlite3.Connection, cfg: Config, now: int | None = None) -> d
         "triaged": len(triage_targets),
         "rate_limited": rate_limited,
     }
+
+
+from dia_organizer import locking
+
+
+def run_scan_cli_safe(conn, cfg, now=None):
+    try:
+        with locking.scan_lock():
+            return run_scan(conn, cfg, now=now)
+    except locking.LockHeld:
+        return {"status": "lock-held"}

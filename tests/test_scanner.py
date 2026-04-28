@@ -85,3 +85,18 @@ def test_scan_respects_max_auto_closes(tmp_data_dir):
         result = scanner.run_scan(conn, cfg, now=30 * 86_400)
     assert len(closes) <= 1
     assert result["rate_limited"] >= 2
+
+
+from dia_organizer import locking
+
+
+def test_scan_uses_lock(tmp_data_dir):
+    conn = db.open_db()
+    cfg = _cfg()
+    with patch("dia_organizer.applescript.dia_running", return_value=True), \
+         patch("dia_organizer.applescript.list_tabs", return_value=_windows()), \
+         patch("dia_organizer.applescript.execute_js", return_value=""), \
+         patch("dia_organizer.profiles.resolve_live", return_value={"WIN1": "Keagan"}):
+        with locking.scan_lock():
+            res = scanner.run_scan_cli_safe(conn, cfg, now=10**9)
+    assert res["status"] == "lock-held"
