@@ -24,7 +24,7 @@ def run_scan(conn: sqlite3.Connection, cfg: Config, now: int | None = None) -> d
     if not applescript.dia_running():
         return {"status": "dia-not-running"}
 
-    win_to_profile = profiles.resolve_live()
+    win_to_profile = profiles.apply_overrides(profiles.resolve_live(), conn)
     windows = applescript.list_tabs()
 
     # 1. Upsert all live tabs (and capture context for new/changed URLs)

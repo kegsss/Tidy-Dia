@@ -33,3 +33,29 @@ def resolve_from_files(local_state: Path, storable: Path) -> dict[str, str]:
 
 def resolve_live() -> dict[str, str]:
     return resolve_from_files(paths.dia_local_state(), paths.dia_storable_profiles())
+
+
+def apply_overrides(base: dict[str, str], conn) -> dict[str, str]:
+    """Layer manual window→profile overrides from config_window_profiles."""
+    out = dict(base)
+    for row in conn.execute("SELECT window_id, profile FROM config_window_profiles"):
+        out[row["window_id"]] = row["profile"]
+    return out
+
+
+def resolve_for_scan(conn) -> dict[str, str]:
+    return apply_overrides(resolve_live(), conn)
+
+
+def bind_window(conn, window_id: str, profile: str, now: int) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO config_window_profiles(window_id, profile, bound_at) "
+        "VALUES (?,?,?)",
+        (window_id, profile, now),
+    )
+    conn.commit()
+
+
+def unbind_window(conn, window_id: str) -> None:
+    conn.execute("DELETE FROM config_window_profiles WHERE window_id=?", (window_id,))
+    conn.commit()

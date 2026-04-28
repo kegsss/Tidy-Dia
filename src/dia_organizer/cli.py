@@ -106,7 +106,7 @@ def triage():
 def snapshot_cmd(label: str):
     conn = db.open_db()
     windows = applescript.list_tabs()
-    win_map = profiles_module().resolve_live()
+    win_map = profiles_module().apply_overrides(profiles_module().resolve_live(), conn)
     sid = snapshots.take(conn, windows, win_map,
                           label=label, trigger="manual",
                           retention="manual", now=int(time.time()))
@@ -130,7 +130,7 @@ def snapshots_cmd():
 def rollback(snapshot_id: int, profile: str | None, dry_run: bool, replace: bool):
     conn = db.open_db()
     windows = applescript.list_tabs()
-    win_map = profiles_module().resolve_live()
+    win_map = profiles_module().apply_overrides(profiles_module().resolve_live(), conn)
     plan = snapshots.plan_rollback(conn, snapshot_id, windows, win_map,
                                     replace=replace, profile_filter=profile)
     if dry_run:
@@ -158,6 +158,36 @@ def rollback(snapshot_id: int, profile: str | None, dry_run: bool, replace: bool
 def profiles_module():
     from dia_organizer import profiles as _p
     return _p
+
+
+@main.command()
+def windows():
+    """List Dia windows with current profile binding (auto + override)."""
+    conn = db.open_db()
+    win_map = profiles_module().apply_overrides(profiles_module().resolve_live(), conn)
+    wins = applescript.list_tabs()
+    for w in wins:
+        prof = win_map.get(w["window_id"], "<unknown>")
+        click.echo(f"{w['window_id']}  profile={prof}  tabs={len(w['tabs'])}  active={w['name'][:60]!r}")
+
+
+@main.command()
+@click.argument("window_id")
+@click.argument("profile")
+def bind(window_id: str, profile: str):
+    """Manually bind a Dia window id to a profile name (overrides Dia's JSON)."""
+    conn = db.open_db()
+    profiles_module().bind_window(conn, window_id, profile, int(time.time()))
+    click.echo(f"bound {window_id} -> {profile}")
+
+
+@main.command()
+@click.argument("window_id")
+def unbind(window_id: str):
+    """Remove manual binding for a window id."""
+    conn = db.open_db()
+    profiles_module().unbind_window(conn, window_id)
+    click.echo(f"unbound {window_id}")
 
 
 @main.command()

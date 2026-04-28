@@ -78,7 +78,7 @@ def create_app() -> Flask:
         from dia_organizer import profiles as _p
         conn = db.open_db()
         windows = applescript.list_tabs()
-        win_map = _p.resolve_live()
+        win_map = _p.apply_overrides(_p.resolve_live(), conn)
         plan = snapshots.plan_rollback(conn, snapshot_id, windows, win_map, replace=False)
         plan["snapshot_id"] = snapshot_id
         rows = [dict(r) for r in snapshots.list_all(conn)]
@@ -90,7 +90,7 @@ def create_app() -> Flask:
         replace = "replace" in request.form
         conn = db.open_db()
         windows = applescript.list_tabs()
-        win_map = _p.resolve_live()
+        win_map = _p.apply_overrides(_p.resolve_live(), conn)
         if replace:
             snapshots.take(conn, windows, win_map,
                             label=f"pre-rollback-of-{snapshot_id}",
