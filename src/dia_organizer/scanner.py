@@ -57,6 +57,26 @@ def run_scan(conn: sqlite3.Connection, cfg: Config, now: int | None = None) -> d
     for profile, ids in seen_per_profile.items():
         archive.mark_external_closes(conn, profile, ids, n)
 
+    # 2b. Hourly snapshot — only if no hourly snapshot in current hour bucket.
+    hour_bucket = n // 3600
+    last_hourly = conn.execute(
+        "SELECT taken_at FROM snapshots WHERE retention='hourly' ORDER BY taken_at DESC LIMIT 1"
+    ).fetchone()
+    if last_hourly is None or (last_hourly["taken_at"] // 3600) < hour_bucket:
+        snapshots.take(conn, windows, win_to_profile,
+                        label="auto-hourly", trigger="hourly",
+                        retention="hourly", now=n)
+
+    # 2c. Nightly snapshot — once per UTC day at/after 02:00 local proxy: bucket by 86400.
+    day_bucket = n // 86_400
+    last_nightly = conn.execute(
+        "SELECT taken_at FROM snapshots WHERE retention='nightly' ORDER BY taken_at DESC LIMIT 1"
+    ).fetchone()
+    if last_nightly is None or (last_nightly["taken_at"] // 86_400) < day_bucket:
+        snapshots.take(conn, windows, win_to_profile,
+                        label="auto-nightly", trigger="nightly",
+                        retention="nightly", now=n)
+
     # 3. Classify all live records together
     decisions = []
     for r in all_records:

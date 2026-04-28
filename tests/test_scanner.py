@@ -100,3 +100,34 @@ def test_scan_uses_lock(tmp_data_dir):
         with locking.scan_lock():
             res = scanner.run_scan_cli_safe(conn, cfg, now=10**9)
     assert res["status"] == "lock-held"
+
+
+def test_hourly_snapshot_taken_when_due(tmp_data_dir):
+    conn = db.open_db()
+    cfg = _cfg()
+    with patch("dia_organizer.applescript.dia_running", return_value=True), \
+         patch("dia_organizer.applescript.list_tabs", return_value=_windows()), \
+         patch("dia_organizer.applescript.execute_js", return_value=""), \
+         patch("dia_organizer.applescript.close_tab"), \
+         patch("dia_organizer.profiles.resolve_live", return_value={"WIN1": "Keagan"}):
+        scanner.run_scan(conn, cfg, now=10**9)
+    cnt_before = conn.execute(
+        "SELECT COUNT(*) FROM snapshots WHERE retention='hourly'"
+    ).fetchone()[0]
+    assert cnt_before >= 1
+
+
+def test_hourly_snapshot_skipped_within_same_hour(tmp_data_dir):
+    conn = db.open_db()
+    cfg = _cfg()
+    with patch("dia_organizer.applescript.dia_running", return_value=True), \
+         patch("dia_organizer.applescript.list_tabs", return_value=_windows()), \
+         patch("dia_organizer.applescript.execute_js", return_value=""), \
+         patch("dia_organizer.applescript.close_tab"), \
+         patch("dia_organizer.profiles.resolve_live", return_value={"WIN1": "Keagan"}):
+        scanner.run_scan(conn, cfg, now=10**9)
+        scanner.run_scan(conn, cfg, now=10**9 + 60)  # one minute later
+    cnt = conn.execute(
+        "SELECT COUNT(*) FROM snapshots WHERE retention='hourly'"
+    ).fetchone()[0]
+    assert cnt == 1
