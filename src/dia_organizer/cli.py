@@ -314,9 +314,17 @@ def _candidates_from_preview(idle_days: int) -> tuple[list[str], list[str]]:
 @click.option("--title", default=None, help="Tab group title (default: 'Triage <date>').")
 @click.option("--color", default="yellow",
               type=click.Choice(["grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"]))
-def corral_triage(idle_days, title, color):
+@click.option("--no-refresh", is_flag=True,
+              help="Skip pre-corral scan refresh (faster but URLs may be stale).")
+def corral_triage(idle_days, title, color, no_refresh):
     """Group all current TRIAGE candidates into a Dia tab group via the bridge extension."""
     cfg = cfgmod.load()
+    if not no_refresh:
+        # Refresh URL state from live Dia first so the extension matches current
+        # tab URLs (after SAML/OAuth redirects, etc).
+        import datetime as dt
+        cfg.dry_run_until = dt.date.today() + dt.timedelta(days=1)  # force dry-run for safety
+        scanner.run_scan_cli_safe(db.open_db(), cfg)
     _, urls = _candidates_from_preview(idle_days)
     if not urls:
         click.echo("No TRIAGE candidates right now.")
@@ -331,9 +339,14 @@ def corral_triage(idle_days, title, color):
 @click.option("--title", default=None, help="Tab group title (default: 'To Close <date>').")
 @click.option("--color", default="red",
               type=click.Choice(["grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"]))
-def corral_autoclose(idle_days, title, color):
+@click.option("--no-refresh", is_flag=True)
+def corral_autoclose(idle_days, title, color, no_refresh):
     """Group all current AUTO_CLOSE candidates into a Dia tab group via the bridge extension."""
     cfg = cfgmod.load()
+    if not no_refresh:
+        import datetime as dt
+        cfg.dry_run_until = dt.date.today() + dt.timedelta(days=1)
+        scanner.run_scan_cli_safe(db.open_db(), cfg)
     urls, _ = _candidates_from_preview(idle_days)
     if not urls:
         click.echo("No AUTO_CLOSE candidates right now.")

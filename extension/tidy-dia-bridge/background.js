@@ -31,13 +31,31 @@ async function handle(cmd) {
   const urls = cmd.urls || [];
   const title = cmd.title || "Triage";
   const color = cmd.color || "grey";
-  const wanted = new Set(urls);
+  // Match exactly OR by URL with fragment stripped OR by origin+path (no query).
+  // This handles SAML/OAuth/hash drift between scan-time and group-time.
+  const exact = new Set(urls);
+  const noFrag = new Set();
+  const originPath = new Set();
+  for (const u of urls) {
+    try {
+      const p = new URL(u);
+      noFrag.add(p.origin + p.pathname + p.search);
+      originPath.add(p.origin + p.pathname);
+    } catch (_) { /* skip malformed */ }
+  }
+  function matches(tabUrl) {
+    if (exact.has(tabUrl)) return true;
+    try {
+      const p = new URL(tabUrl);
+      if (noFrag.has(p.origin + p.pathname + p.search)) return true;
+      if (originPath.has(p.origin + p.pathname)) return true;
+    } catch (_) {}
+    return false;
+  }
   const allTabs = await chrome.tabs.query({});
   const byWindow = new Map();
   for (const t of allTabs) {
-    if (!wanted.has(t.url)) continue;
-    // Skip tabs Dia can't reliably address: pinned tabs (can't be grouped),
-    // tabs without a stable id, and discarded/frozen tabs.
+    if (!t.url || !matches(t.url)) continue;
     if (t.pinned) continue;
     if (typeof t.id !== "number") continue;
     if (!byWindow.has(t.windowId)) byWindow.set(t.windowId, []);
