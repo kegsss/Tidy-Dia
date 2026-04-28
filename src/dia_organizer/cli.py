@@ -5,7 +5,7 @@ import sys
 import time
 import click
 
-from dia_organizer import applescript, archive, config as cfgmod, db, paths as paths_mod, scanner, scheduling, server, snapshots
+from dia_organizer import applescript, archive, classifier, config as cfgmod, db, paths as paths_mod, scanner, scheduling, server, snapshots
 
 
 @click.group()
@@ -164,6 +164,62 @@ def rollback(snapshot_id: int, profile: str | None, dry_run: bool, replace: bool
 def profiles_module():
     from dia_organizer import profiles as _p
     return _p
+
+
+@main.command()
+@click.option("--idle-days", type=int, default=None,
+              help="Simulate every tab being idle for N days (overrides actual idle time).")
+@click.option("--protect-recent-days", type=int, default=None,
+              help="Override config.protect_recent_days for this preview only.")
+@click.option("--triage-days", type=int, default=None,
+              help="Override config.triage_threshold_days for this preview only.")
+@click.option("--limit", type=int, default=200, help="Max rows to print")
+def preview(idle_days, protect_recent_days, triage_days, limit):
+    """Show what classifier WOULD decide right now with optionally relaxed
+    thresholds. NO DB writes, NO closes. Uses tabs already recorded in DB.
+
+    Examples:
+      dia-organizer preview --idle-days 10
+        \b
+        Show what would happen if every live tab were 10 days idle.
+
+      dia-organizer preview --protect-recent-days 0 --triage-days 0
+        \b
+        Show classifier decisions ignoring the recency floor.
+    """
+    cfg = cfgmod.load()
+    if protect_recent_days is not None:
+        cfg.protect_recent_days = protect_recent_days
+    if triage_days is not None:
+        cfg.triage_threshold_days = triage_days
+    conn = db.open_db()
+    now = int(time.time())
+    rows = [dict(r) for r in conn.execute("SELECT * FROM tabs WHERE is_live=1")]
+    if idle_days is not None:
+        for r in rows:
+            r["last_seen"] = now - idle_days * 86_400
+            r["last_focused"] = now - idle_days * 86_400
+            # also age first_seen so protect-recent doesn't bypass
+            if (now - r["first_seen"]) < idle_days * 86_400:
+                r["first_seen"] = now - idle_days * 86_400 - 1
+    decisions = [(r, classifier.classify(r, rows, cfg, now)) for r in rows]
+    by_action = {"AUTO_CLOSE": [], "TRIAGE": [], "PROTECT": [], "KEEP": []}
+    for r, d in decisions:
+        by_action[d.action].append((r, d))
+    click.echo(f"PROTECT={len(by_action['PROTECT'])} "
+               f"AUTO_CLOSE={len(by_action['AUTO_CLOSE'])} "
+               f"TRIAGE={len(by_action['TRIAGE'])} "
+               f"KEEP={len(by_action['KEEP'])}")
+    shown = 0
+    for action in ("AUTO_CLOSE", "TRIAGE"):
+        for r, d in by_action[action]:
+            click.echo(f"  {action} [{d.reason}] [{r['profile']}] "
+                       f"{(r['title'] or '')[:60]} — {r['url']}")
+            shown += 1
+            if shown >= limit:
+                click.echo(f"  ... (showing {limit} of "
+                           f"{len(by_action['AUTO_CLOSE']) + len(by_action['TRIAGE'])})")
+                return
 
 
 @main.command()
