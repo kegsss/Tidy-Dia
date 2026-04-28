@@ -9,3 +9,5 @@ htmlcov/
 dist/
 build/
 .claude/
+/grouped
+/result.detail
